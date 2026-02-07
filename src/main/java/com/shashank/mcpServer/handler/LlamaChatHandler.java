@@ -1,67 +1,68 @@
 package com.shashank.mcpServer.handler;
 
 import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.File;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 
 /**
  * Handles communication with a local LLaMA Python process.
- */
+ */ 
 public class LlamaChatHandler {
 
-    private static Process llamaProcess;
-    private static OutputStreamWriter writer;
+    private static final Object LOCK = new Object();
+
+    private static Process process;
+    private static BufferedWriter writer;
     private static BufferedReader reader;
 
     static {
+        startPython();
+    }
+
+    private static void startPython() {
         try {
+            ProcessBuilder pb = new ProcessBuilder(
+                "/Users/shashank/Documents/ideaSpace/mcp-server-kafka/.venv/bin/python",
+                "src/python/run_llama.py"
+            );
 
-            String scriptPath = new File(
-                    Thread.currentThread().getContextClassLoader()
-                            .getResource("python/run_llama.py").toURI())
-                    .getAbsolutePath();
+            pb.redirectErrorStream(true);
+            process = pb.start();
 
-            // Start your Python script that runs LLaMA
-            llamaProcess = new ProcessBuilder("python3", scriptPath)
-                    .redirectErrorStream(true)
-                    .start();
-
-            writer = new OutputStreamWriter(llamaProcess.getOutputStream());
-            reader = new BufferedReader(new InputStreamReader(llamaProcess.getInputStream()));
+            writer = new BufferedWriter(new OutputStreamWriter(process.getOutputStream()));
+            reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
 
             System.out.println("Python LLaMA process started successfully.");
 
         } catch (Exception e) {
-            e.printStackTrace();
-            throw new RuntimeException("Failed to start LLaMA Python process");
+            throw new RuntimeException("Failed to start Python LLaMA process", e);
         }
     }
 
-    /**
-     * Sends a prompt to Python LLaMA and returns the generated response.
-     */
-    public static synchronized String generateResponse(String prompt) {
-        try {
-            // Send prompt to Python
-            writer.write(prompt + "\n");
-            writer.flush();
+    public static String generateResponse(String prompt) {
+        synchronized (LOCK) {
+            try {
+                if (!process.isAlive()) {
+                    return "LLM process is not running";
+                }
 
-            // Read single-line response
-            String response;
-            do {
-                response = reader.readLine();
-            } while (response != null && response.trim().isEmpty());
+                writer.write(prompt);
+                writer.newLine();
+                writer.flush();
 
-            if (response == null) {
-                return "LLM process terminated unexpectedly";
+                String response = reader.readLine();
+                if (response == null) {
+                    return "LLM returned no output";
+                }
+
+                return response;
+
+            } catch (IOException e) {
+                return "LLM communication error: " + e.getMessage();
             }
-
-            return response;
-
-        } catch (Exception e) {
-            e.printStackTrace();
-            return "Error generating response: " + e.getMessage();
         }
     }
 }

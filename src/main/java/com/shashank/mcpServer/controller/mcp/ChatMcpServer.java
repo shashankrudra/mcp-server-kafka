@@ -10,6 +10,10 @@ import reactor.core.publisher.Mono;
 import reactor.netty.DisposableServer;
 import reactor.netty.tcp.TcpServer;
 
+/**
+  [Client]  <--TCP-->  [MCP Server]  <--stdin/stdout-->  [Python LLaMA Process]
+
+ */
 @Component
 public class ChatMcpServer {
 
